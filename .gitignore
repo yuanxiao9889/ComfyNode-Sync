@@ -1,0 +1,8 @@
+__pycache__/
+venv/
+config.json
+error_log.txt
+*.pyc
+.idea/
+.vscode/
+verify_*/
