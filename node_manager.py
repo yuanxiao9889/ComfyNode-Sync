@@ -17,9 +17,10 @@ class Node:
     is_git_repo: bool
     remote_url: Optional[str] = None
     last_update_time: Optional[str] = None
+    install_time: Optional[str] = None
     
     def __repr__(self):
-        return f"Node(name='{self.name}', is_git={self.is_git_repo}, url='{self.remote_url}', last_update='{self.last_update_time}')"
+        return f"Node(name='{self.name}', is_git={self.is_git_repo}, url='{self.remote_url}', last_update='{self.last_update_time}', install_time='{self.install_time}')"
 
 class NodeManager:
     def __init__(self):
@@ -57,6 +58,16 @@ class NodeManager:
             self.metadata[node_name] = {}
         
         self.metadata[node_name]["last_updated"] = now
+        self.save_metadata()
+        return now
+
+    def set_node_install_time(self, node_name: str):
+        now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        if node_name not in self.metadata:
+            self.metadata[node_name] = {}
+            
+        self.metadata[node_name]["install_time"] = now
         self.save_metadata()
         return now
 
@@ -126,7 +137,8 @@ class NodeManager:
                     path=item_path,
                     is_git_repo=is_git,
                     remote_url=remote_url,
-                    last_update_time=self.metadata.get(item, {}).get("last_updated")
+                    last_update_time=self.metadata.get(item, {}).get("last_updated"),
+                    install_time=self.metadata.get(item, {}).get("install_time")
                 ))
         return nodes
 

@@ -671,6 +671,8 @@ class App(ttk.Window):
             msg_val = ""
             if node.last_update_time:
                 msg_val = f"最后更新: {node.last_update_time}"
+            elif node.install_time:
+                msg_val = f"安装时间: {node.install_time}"
             
             # Use cached status
             tag = 'even' if self.manage_tree.get_children() and len(self.manage_tree.get_children()) % 2 == 0 else 'odd'
@@ -935,9 +937,15 @@ class App(ttk.Window):
         self.log(f"Cloning {name} from {url}...")
         try:
             summary = self.manager.clone_node(url, target_path, proxy=proxy if proxy else None)
-            self.log(f"Installed {name}:\n{summary}\n" + "-"*40)
+            
+            # Record installation time
+            install_time = self.manager.set_node_install_time(name)
+            
+            self.log(f"Installed {name} at {install_time}:\n{summary}\n" + "-"*40)
             self.new_node_url.set("") # Clear input
             self.refresh_current_nodes() # Refresh list
+            
+            messagebox.showinfo("安装成功", f"节点 {name} 安装成功！\n时间: {install_time}")
         except Exception as e:
             self.log(f"Installation failed: {e}")
 

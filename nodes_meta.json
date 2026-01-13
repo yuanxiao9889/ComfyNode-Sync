@@ -88,5 +88,17 @@
     },
     "comfyui-kjnodes": {
         "git_url": "https://github.com/kijai/ComfyUI-KJNodes.git"
+    },
+    "weilin-comfyui-tools": {
+        "git_url": "https://github.com/weilin9999/WeiLin-Comfyui-Tools.git"
+    },
+    "onebuttonprompt": {
+        "git_url": "https://github.com/AIrjen/OneButtonPrompt.git"
+    },
+    "Comfyui_TTP_Toolset": {
+        "install_time": "2026-01-13 23:39:03"
+    },
+    "ComfyUI-FramePackWrapper": {
+        "git_url": "https://github.com/kijai/ComfyUI-FramePackWrapper.git"
     }
 }
