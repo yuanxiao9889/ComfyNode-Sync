@@ -85,5 +85,8 @@
     },
     "ComfyUI_LayerStyle": {
         "last_updated": "2026-01-07 23:46:43"
+    },
+    "comfyui-kjnodes": {
+        "git_url": "https://github.com/kijai/ComfyUI-KJNodes.git"
     }
 }

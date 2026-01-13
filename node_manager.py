@@ -60,6 +60,16 @@ class NodeManager:
         self.save_metadata()
         return now
 
+    def set_node_git_url(self, node_name: str, url: str):
+        if node_name not in self.metadata:
+            self.metadata[node_name] = {}
+        
+        self.metadata[node_name]["git_url"] = url
+        self.save_metadata()
+
+    def get_node_git_url(self, node_name: str) -> Optional[str]:
+        return self.metadata.get(node_name, {}).get("git_url")
+
     def _get_git_env(self, proxy: Optional[str]) -> Dict[str, str]:
         """Helper to construct environment variables for proxy."""
         env = os.environ.copy()
@@ -81,7 +91,9 @@ class NodeManager:
         # List all subdirectories in the given path
         for item in os.listdir(path):
             item_path = os.path.join(path, item)
-            if os.path.isdir(item_path):
+            if os.path.isdir(item_path) and not item.startswith('.'):
+                if item == "__pycache__":
+                    continue
                 # Check if it's a git repository
                 is_git = False
                 remote_url = None
@@ -100,6 +112,14 @@ class NodeManager:
                     is_git = False
                 except Exception as e:
                     print(f"Error scanning {item}: {e}")
+
+                # If not a git repo, check metadata for manually set URL
+                if not is_git:
+                    manual_url = self.metadata.get(item, {}).get("git_url")
+                    if manual_url:
+                        remote_url = manual_url
+                        # Treat as Git repo for migration purposes if URL is present
+                        is_git = True 
 
                 nodes.append(Node(
                     name=item,

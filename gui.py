@@ -4,7 +4,7 @@ import shutil
 import threading
 import tkinter as tk
 import webbrowser
-from tkinter import filedialog, messagebox
+from tkinter import filedialog, messagebox, simpledialog
 import ttkbootstrap as ttk
 from ttkbootstrap.constants import *
 from node_manager import NodeManager, Node
@@ -36,6 +36,11 @@ class App(ttk.Window):
         style = ttk.Style()
         style.configure("Treeview", font=('Microsoft YaHei', 12), rowheight=35)
         style.configure("Treeview.Heading", font=('Microsoft YaHei', 12, 'bold'))
+        
+        # Set selection color to Light Blue (Bootstrap Info color) with Black text for contrast
+        style.map("Treeview",
+                  background=[('selected', '#5bc0de')],
+                  foreground=[('selected', '#000000')])
         
         self.manager = NodeManager()
         self.current_nodes = []
@@ -252,29 +257,47 @@ class App(ttk.Window):
         ttk.Entry(toolbar, textvariable=self.new_node_url, width=40).pack(side=LEFT, padx=5)
         ttk.Button(toolbar, text="Git 安装节点", command=self.start_git_install_thread, bootstyle="dark").pack(side=LEFT, padx=5)
 
-        # Treeview
+        # Treeview Frame
+        tree_frame = ttk.Frame(self.tab_manage)
+        tree_frame.pack(fill=BOTH, expand=True)
+
         columns = ("select", "name", "type", "remote", "status", "msg")
-        self.manage_tree = ttk.Treeview(self.tab_manage, columns=columns, show="headings", selectmode="extended")
+        self.manage_tree = ttk.Treeview(tree_frame, columns=columns, show="headings", selectmode="extended")
         
-        self.manage_tree.heading("select", text="选择")
-        self.manage_tree.heading("name", text="节点名称")
-        self.manage_tree.heading("type", text="类型")
-        self.manage_tree.heading("remote", text="Git 地址")
-        self.manage_tree.heading("status", text="更新状态")
-        self.manage_tree.heading("msg", text="信息")
+        self.manage_tree.heading("select", text="选择", command=lambda: self.sort_treeview(self.manage_tree, "select", False))
+        self.manage_tree.heading("name", text="节点名称", command=lambda: self.sort_treeview(self.manage_tree, "name", False))
+        self.manage_tree.heading("type", text="类型", command=lambda: self.sort_treeview(self.manage_tree, "type", False))
+        self.manage_tree.heading("remote", text="Git 地址", command=lambda: self.sort_treeview(self.manage_tree, "remote", False))
+        self.manage_tree.heading("status", text="更新状态", command=lambda: self.sort_treeview(self.manage_tree, "status", False))
+        self.manage_tree.heading("msg", text="信息", command=lambda: self.sort_treeview(self.manage_tree, "msg", False))
         
-        self.manage_tree.column("select", width=80, anchor=CENTER)
-        self.manage_tree.column("name", width=200)
-        self.manage_tree.column("type", width=80)
-        self.manage_tree.column("remote", width=300)
-        self.manage_tree.column("status", width=120)
-        self.manage_tree.column("msg", width=200)
+        self.manage_tree.column("select", width=60, anchor=CENTER, stretch=False)
+        self.manage_tree.column("name", width=200, minwidth=100)
+        self.manage_tree.column("type", width=80, minwidth=60, stretch=False)
+        self.manage_tree.column("remote", width=300, minwidth=150)
+        self.manage_tree.column("status", width=100, minwidth=80, stretch=False)
+        self.manage_tree.column("msg", width=200, minwidth=100)
         
-        scrollbar = ttk.Scrollbar(self.tab_manage, orient=VERTICAL, command=self.manage_tree.yview)
-        self.manage_tree.configure(yscroll=scrollbar.set)
+        # Scrollbars
+        v_scrollbar = ttk.Scrollbar(tree_frame, orient=VERTICAL, command=self.manage_tree.yview)
+        h_scrollbar = ttk.Scrollbar(tree_frame, orient=HORIZONTAL, command=self.manage_tree.xview)
         
-        self.manage_tree.pack(side=LEFT, fill=BOTH, expand=True)
-        scrollbar.pack(side=RIGHT, fill=Y)
+        self.manage_tree.configure(yscroll=v_scrollbar.set, xscroll=h_scrollbar.set)
+        
+        # Grid layout for tree and scrollbars
+        self.manage_tree.grid(row=0, column=0, sticky='nsew')
+        v_scrollbar.grid(row=0, column=1, sticky='ns')
+        h_scrollbar.grid(row=1, column=0, sticky='ew')
+        
+        # Configure grid weights
+        tree_frame.rowconfigure(0, weight=1)
+        tree_frame.columnconfigure(0, weight=1)
+
+        # Style configuration for striped rows
+        self.manage_tree.tag_configure('odd', background='#3a3a3a')
+        self.manage_tree.tag_configure('even', background='#2b2b2b')
+        self.manage_tree.tag_configure('checked', background='#5bc0de', foreground='#000000')
+        
         self.manage_tree.bind('<Button-1>', self.on_manage_click)
         self.manage_tree.bind('<Button-3>', self.show_context_menu)
         self.manage_tree.bind('<Double-1>', self.on_node_double_click)
@@ -351,10 +374,17 @@ class App(ttk.Window):
         val = self.manage_tree.set(iid, 'select')
         new_val = '☑' if val != '☑' else '☐'
         self.manage_tree.set(iid, 'select', new_val)
+        
+        # Update Tags (Exclusive logic: Checked OR Odd/Even)
         if new_val == '☑':
             self.manage_checked.add(iid)
+            self.manage_tree.item(iid, tags=['checked'])
         else:
             self.manage_checked.discard(iid)
+            # Restore odd/even based on index
+            idx = self.manage_tree.index(iid)
+            tag = 'even' if idx % 2 == 0 else 'odd'
+            self.manage_tree.item(iid, tags=[tag])
 
     def show_context_menu(self, event):
         iid = self.manage_tree.identify_row(event.y)
@@ -375,8 +405,109 @@ class App(ttk.Window):
                 menu.add_command(label="打开 GitHub", command=lambda: webbrowser.open(remote_url))
             else:
                 menu.add_command(label="在 GitHub 搜索", command=lambda: webbrowser.open(f"https://github.com/search?q={node_name}"))
+                menu.add_command(label="设置 Git 地址", command=lambda: self.set_git_url(node_name))
                 
             menu.post(event.x_root, event.y_root)
+
+    def set_git_url(self, node_name):
+        url = simpledialog.askstring("设置 Git 地址", f"请输入 {node_name} 的 Git 仓库地址:", parent=self)
+        if not url:
+            return
+            
+        url = url.strip()
+        if not url:
+            return
+
+        # Validation Logic
+        # We need to check if the content of the repo at 'url' matches the local folder content.
+        # This is tricky without cloning.
+        # A simple approach: 
+        # 1. Warn user that this action will just associate the URL for future use (like migration), 
+        #    but won't convert the current folder to a git repo immediately unless we implement that.
+        # 
+        # Requirement: "提交地址后，需要对地址进行验证，如果是这个地址，那么才更新信息，如果有差异，请告知用户，用户可以强制提交或者取消"
+        # 
+        # To validate:
+        # We can try to list files from the remote repo (e.g. using git ls-remote or fetching a file list via API if it's GitHub)
+        # But git ls-remote only gives refs.
+        # 
+        # Better approach for verification:
+        # 1. Clone the repo to a temp dir.
+        # 2. Compare file structure/names with local dir.
+        # 3. If similar, assume correct.
+        
+        threading.Thread(target=self.verify_and_set_git_url, args=(node_name, url), daemon=True).start()
+
+    def verify_and_set_git_url(self, node_name, url):
+        self.log(f"正在验证 Git 地址: {url} ...")
+        
+        import tempfile
+        temp_dir = os.path.join(tempfile.gettempdir(), "comfynode_sync_validate", node_name)
+        
+        if os.path.exists(temp_dir):
+            try:
+                shutil.rmtree(temp_dir, ignore_errors=True)
+            except:
+                pass
+                
+        try:
+            # Clone to temp
+            self.manager.clone_node(url, temp_dir, proxy=self.get_proxy_url())
+            
+            # Compare
+            local_path = os.path.join(self.custom_nodes_path_var.get(), node_name)
+            
+            # Get file lists
+            local_files = set()
+            for root, dirs, files in os.walk(local_path):
+                rel_root = os.path.relpath(root, local_path)
+                if rel_root == ".": rel_root = ""
+                for f in files:
+                    if not f.endswith(".pyc") and ".git" not in root:
+                        local_files.add(os.path.join(rel_root, f))
+
+            remote_files = set()
+            for root, dirs, files in os.walk(temp_dir):
+                rel_root = os.path.relpath(root, temp_dir)
+                if rel_root == ".": rel_root = ""
+                if ".git" in root: continue
+                for f in files:
+                    remote_files.add(os.path.join(rel_root, f))
+            
+            # Calculate similarity (Jaccard index or simple intersection)
+            intersection = local_files.intersection(remote_files)
+            similarity = len(intersection) / len(local_files.union(remote_files)) if local_files or remote_files else 0
+            
+            is_match = similarity > 0.5 # Threshold
+            
+            msg = f"验证完成。\n相似度: {similarity:.2%}\n"
+            if is_match:
+                msg += "文件结构高度匹配，已自动更新地址。"
+                self.manager.set_node_git_url(node_name, url)
+                self.log(f"Git 地址更新成功: {node_name} -> {url}")
+                messagebox.showinfo("验证成功", msg)
+                self.after(100, self.refresh_current_nodes)
+            else:
+                msg += "文件结构差异较大，可能不是同一个节点。\n是否强制设置为此地址？"
+                if messagebox.askyesno("验证差异", msg):
+                    self.manager.set_node_git_url(node_name, url)
+                    self.log(f"用户强制更新 Git 地址: {node_name} -> {url}")
+                    self.after(100, self.refresh_current_nodes)
+                else:
+                    self.log("用户取消更新 Git 地址。")
+            
+            # Clean up
+            try:
+                shutil.rmtree(temp_dir, ignore_errors=True)
+            except:
+                pass
+                
+        except Exception as e:
+            self.log(f"验证失败: {e}")
+            if messagebox.askyesno("验证出错", f"验证过程中出错：{e}\n是否忽略错误强制设置？"):
+                 self.manager.set_node_git_url(node_name, url)
+                 self.log(f"用户强制更新 Git 地址: {node_name} -> {url}")
+                 self.after(100, self.refresh_current_nodes)
 
     def copy_to_clipboard(self, text):
         self.clipboard_clear()
@@ -523,6 +654,9 @@ class App(ttk.Window):
             
             # 2. Type Filter
             is_git = node.is_git_repo
+            # Check if it has a manual URL - although now node.is_git_repo might be True for manual ones too
+            # We can rely on is_git_repo being True now
+            
             node_type_str = "Git" if is_git else "文件夹"
             if filter_type != "全部" and filter_type != node_type_str:
                 continue
@@ -539,6 +673,7 @@ class App(ttk.Window):
                 msg_val = f"最后更新: {node.last_update_time}"
             
             # Use cached status
+            tag = 'even' if self.manage_tree.get_children() and len(self.manage_tree.get_children()) % 2 == 0 else 'odd'
             self.manage_tree.insert("", END, values=(
                 "☐",
                 node.name,
@@ -546,17 +681,38 @@ class App(ttk.Window):
                 node.remote_url if node.remote_url else "-",
                 status,
                 msg_val
-            ))
+            ), tags=(tag,))
+
+    def sort_treeview(self, tree, col, reverse):
+        l = [(tree.set(k, col), k) for k in tree.get_children('')]
+        l.sort(reverse=reverse)
+
+        # rearrange items in sorted positions
+        for index, (val, k) in enumerate(l):
+            tree.move(k, '', index)
+            
+            # Apply tags based on state
+            if tree.set(k, 'select') == '☑':
+                tree.item(k, tags=['checked'])
+            else:
+                tag = 'even' if index % 2 == 0 else 'odd'
+                tree.item(k, tags=[tag])
+
+        # reverse sort next time
+        tree.heading(col, command=lambda: self.sort_treeview(tree, col, not reverse))
 
     def select_all_manage(self):
         for item_id in self.manage_tree.get_children():
             self.manage_tree.set(item_id, "select", "☑")
             self.manage_checked.add(item_id)
+            self.manage_tree.item(item_id, tags=['checked'])
 
     def deselect_all_manage(self):
-        for item_id in self.manage_tree.get_children():
+        for index, item_id in enumerate(self.manage_tree.get_children()):
             self.manage_tree.set(item_id, "select", "☐")
             self.manage_checked.discard(item_id)
+            tag = 'even' if index % 2 == 0 else 'odd'
+            self.manage_tree.item(item_id, tags=[tag])
 
     def start_check_updates_thread(self):
         threading.Thread(target=self.check_updates_logic, daemon=True).start()
