@@ -64,6 +64,10 @@ class App(ttk.Window):
         self.model_target_var = tk.StringVar()
         self.workflow_target_var = tk.StringVar()
         
+        # Backup Variables
+        self.backup_file_var = tk.StringVar()
+        self.restore_target_var = tk.StringVar()
+        
         # Filter Variables
         self.migrate_filter_var = tk.StringVar()
         self.manage_filter_name_var = tk.StringVar()
@@ -202,6 +206,11 @@ class App(ttk.Window):
         self.tab_symlink = ttk.Frame(self.notebook, padding=10)
         self.notebook.add(self.tab_symlink, text="资源共享")
         self.setup_symlink_tab()
+
+        # Tab 4: Backup (Backup & Restore)
+        self.tab_backup = ttk.Frame(self.notebook, padding=10)
+        self.notebook.add(self.tab_backup, text="备份还原")
+        self.setup_backup_tab()
 
         # --- Right Pane: Log Section ---
         self.log_frame = ttk.Labelframe(self.main_paned, text="系统日志", padding=10)
@@ -359,6 +368,132 @@ class App(ttk.Window):
         self.migrate_tree.pack(side=LEFT, fill=BOTH, expand=True)
         scrollbar.pack(side=RIGHT, fill=Y)
         self.migrate_tree.bind('<Button-1>', self.on_migrate_click)
+
+    def setup_backup_tab(self):
+        # --- Backup Section ---
+        backup_frame = ttk.Labelframe(self.tab_backup, text="节点备份 (导出列表)", padding=10)
+        backup_frame.pack(fill=X, padx=5, pady=5)
+        
+        ttk.Label(backup_frame, text="将当前所有包含 Git 地址的节点信息导出为 JSON 文件，以便日后恢复或迁移。", wraplength=400, justify=LEFT).pack(fill=X, pady=5)
+        
+        ttk.Button(backup_frame, text="导出节点备份", command=self.export_backup, bootstyle="primary").pack(anchor=W, pady=5)
+        
+        # --- Restore Section ---
+        restore_frame = ttk.Labelframe(self.tab_backup, text="节点恢复 (从备份导入)", padding=10)
+        restore_frame.pack(fill=X, padx=5, pady=10)
+        
+        # Row 1: Backup File
+        ttk.Label(restore_frame, text="备份文件 (*.json):").grid(row=0, column=0, sticky=W, padx=5, pady=5)
+        ttk.Entry(restore_frame, textvariable=self.backup_file_var).grid(row=0, column=1, sticky=EW, padx=5)
+        ttk.Button(restore_frame, text="浏览", command=self.browse_backup_file, bootstyle="outline").grid(row=0, column=2, padx=5)
+        
+        # Row 2: Target Dir
+        ttk.Label(restore_frame, text="恢复目标目录:").grid(row=1, column=0, sticky=W, padx=5, pady=5)
+        ttk.Entry(restore_frame, textvariable=self.restore_target_var).grid(row=1, column=1, sticky=EW, padx=5)
+        ttk.Button(restore_frame, text="浏览", command=self.browse_restore_target, bootstyle="outline").grid(row=1, column=2, padx=5)
+        
+        restore_frame.columnconfigure(1, weight=1)
+        
+        ttk.Button(restore_frame, text="开始恢复节点", command=self.start_restore_thread, bootstyle="success").grid(row=2, column=0, columnspan=3, pady=10)
+
+        # Info
+        info_text = """注意：
+1. 恢复过程会尝试根据备份文件中的 Git 地址重新下载节点。
+2. 如果目标目录中已存在同名节点，将会跳过该节点。
+3. 请确保网络连接正常（可配合代理使用）。"""
+        ttk.Label(self.tab_backup, text=info_text, justify=LEFT, foreground="#cccccc").pack(fill=X, padx=15, pady=5)
+
+    def browse_backup_file(self):
+        path = filedialog.askopenfilename(filetypes=[("JSON Files", "*.json"), ("All Files", "*.*")])
+        if path:
+            self.backup_file_var.set(path)
+
+    def browse_restore_target(self):
+        path = filedialog.askdirectory()
+        if path:
+            self.restore_target_var.set(path)
+
+    def export_backup(self):
+        if not self.current_nodes:
+            messagebox.showwarning("提示", "当前没有加载任何节点信息，请先在“节点管理”页刷新列表。")
+            return
+            
+        file_path = filedialog.asksaveasfilename(defaultextension=".json", filetypes=[("JSON Files", "*.json")])
+        if not file_path:
+            return
+            
+        try:
+            count = self.manager.create_backup(self.current_nodes, file_path)
+            self.log(f"成功导出 {count} 个节点的备份信息到: {file_path}")
+            messagebox.showinfo("备份成功", f"成功导出 {count} 个节点！")
+        except Exception as e:
+            self.log(f"备份失败: {e}")
+            messagebox.showerror("备份失败", str(e))
+
+    def start_restore_thread(self):
+        threading.Thread(target=self.restore_logic, daemon=True).start()
+
+    def restore_logic(self):
+        backup_file = self.backup_file_var.get()
+        target_root = self.restore_target_var.get()
+        proxy = self.get_proxy_url()
+        
+        if not backup_file or not os.path.exists(backup_file):
+            self.log("错误: 备份文件不存在。")
+            return
+        if not target_root:
+            self.log("错误: 请设置恢复目标目录。")
+            return
+            
+        try:
+            nodes_data = self.manager.load_backup(backup_file)
+        except Exception as e:
+            self.log(f"读取备份文件失败: {e}")
+            return
+            
+        total = len(nodes_data)
+        if total == 0:
+            self.log("备份文件为空。")
+            return
+            
+        self.log(f"开始从备份恢复 {total} 个节点...")
+        
+        success_count = 0
+        skip_count = 0
+        fail_count = 0
+        
+        for node_info in nodes_data:
+            name = node_info.get("name")
+            url = node_info.get("url")
+            
+            if not name or not url:
+                continue
+                
+            target_path = os.path.join(target_root, name)
+            
+            if os.path.exists(target_path):
+                self.log(f"跳过 {name}: 目标已存在。")
+                skip_count += 1
+                continue
+                
+            self.log(f"正在恢复 {name} ({url})...")
+            try:
+                self.manager.clone_node(url, target_path, proxy=proxy if proxy else None)
+                self.manager.set_node_install_time(name) # Record install time
+                self.log(f"已恢复 {name}")
+                success_count += 1
+            except Exception as e:
+                self.log(f"恢复失败 {name}: {e}")
+                fail_count += 1
+                
+        summary = f"恢复完成。\n成功: {success_count}\n跳过: {skip_count}\n失败: {fail_count}"
+        self.log("-" * 40)
+        self.log(summary)
+        messagebox.showinfo("恢复完成", summary)
+        
+        # Refresh if restoring to current custom_nodes
+        if os.path.normpath(target_root) == os.path.normpath(self.custom_nodes_path_var.get()):
+            self.refresh_current_nodes()
 
     # --- Helpers ---
     def log(self, msg):

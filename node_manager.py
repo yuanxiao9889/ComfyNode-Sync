@@ -334,3 +334,31 @@ class NodeManager:
         except subprocess.CalledProcessError as e:
             print(f"Failed to install requirements for {node_path}. Error: {e.stderr}")
             raise
+
+    def create_backup(self, nodes: List[Node], output_path: str):
+        """
+        Create a backup JSON file containing node names and their Git URLs.
+        Only includes nodes with a valid remote_url.
+        """
+        backup_data = []
+        for node in nodes:
+            if node.remote_url and node.remote_url != "-":
+                backup_data.append({
+                    "name": node.name,
+                    "url": node.remote_url,
+                    "is_git": node.is_git_repo
+                })
+        
+        with open(output_path, 'w', encoding='utf-8') as f:
+            json.dump(backup_data, f, indent=4, ensure_ascii=False)
+        return len(backup_data)
+
+    def load_backup(self, backup_path: str) -> List[Dict]:
+        """
+        Load backup data from a JSON file.
+        """
+        if not os.path.exists(backup_path):
+            raise FileNotFoundError(f"Backup file not found: {backup_path}")
+            
+        with open(backup_path, 'r', encoding='utf-8') as f:
+            return json.load(f)
